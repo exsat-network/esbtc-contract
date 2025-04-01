@@ -13,13 +13,12 @@ import "./ChainManager.sol";
 
 interface IiBTCwToken {
     function mint(address to, uint256 amount) external;
-
     function burn(address from, uint256 amount) external;
-
-    function payFee(address from, address to, uint256 amount) external;
 }
 
 contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
+    using RequestLib for RequestManager.Request;
+
     bytes32 public MAIN_CHAIN;
     address public minter;
     address public ibtcw;
@@ -29,8 +28,12 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
     RequestManager public requestManager;
     ChainManager public chainManager;
 
-    // 用于记录跨链请求的确认情况
+    // Mapping for cross-chain confirmations: source request hash => destination chain request hash
     mapping(bytes32 => bytes32) public crosschainRequestConfirmation;
+    // Prevent reusing the same BTC deposit tx (using a unique key from deposit txid and output index)
+    mapping(bytes32 => bytes32) public usedDepositTxs;
+    // Prevent reusing the same BTC withdrawal tx (using a unique key from withdrawal txid and output index)
+    mapping(bytes32 => bytes32) public usedWithdrawalTxs;
 
     event TokenSet(address indexed _token);
     event MinterSet(address indexed _minter);
@@ -38,6 +41,7 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
     event UserManagerSet(address userManager);
     event RequestManagerSet(address requestManager);
     event ChainManagerSet(address chainManager);
+    event RequestConfirmed(bytes32 indexed requestHash);
 
     function initialize(bytes32 _mainChain) public initializer {
         __AccessControl_init();
@@ -89,42 +93,25 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         return bytes32(block.chainid);
     }
 
-    function getRequestHash(RequestManager.Request memory r) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                r.op,
-                r.nonce,
-                r.srcChain,
-                r.srcAddress,
-                r.dstChain,
-                r.dstAddress,
-                r.amount,
-                r.fee,
-                r.extra
-            )
-        );
-    }
-
-    function getCrossSourceRequestHash(RequestManager.Request memory src) internal pure returns (bytes32) {
-        bytes memory extra = src.extra;
-        RequestManager.Operation originalOp = src.op;
-        src.op = RequestManager.Operation.CrosschainRequest;
-        src.extra = "";
-        bytes32 hashVal = getRequestHash(src);
-        src.op = originalOp;
-        src.extra = extra;
-        return hashVal;
-    }
-
+    /// @notice Submit a mint request. The deposit txid and output index are recorded to prevent reusing the same BTC deposit.
     function addMintRequest(
         uint256 _amount,
         bytes32 _depositTxid,
         uint256 _outputIndex
-    ) external whenNotPaused nonReentrant returns (bytes32) {
+    ) external payable whenNotPaused nonReentrant returns (bytes32) {
         require(_amount > 0, "Invalid amount");
-        (bool locked, string memory depositAddr,) = userManager.userInfo(msg.sender);
+        (bool locked, string memory depositAddr, ) = userManager.userInfo(msg.sender);
         require(bytes(depositAddr).length > 0, "User not qualified");
         require(!locked, "User locked");
+
+        FeeConfigStore.FeeConfig memory fc = feeStore.getFeeConfig();
+        uint256 fee = fc.mintFee;
+        require(msg.value == fee, "Incorrect fee sent");
+
+        // Create a unique key for the deposit and ensure it hasn't been used
+        bytes32 depositKey = keccak256(abi.encode(_depositTxid, _outputIndex));
+        require(usedDepositTxs[depositKey] == bytes32(0), "Deposit tx already used");
+        usedDepositTxs[depositKey] = depositKey;
 
         RequestManager.Request memory r;
         r.nonce = requestManager.nonce();
@@ -136,21 +123,23 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         r.dstAddress = abi.encode(msg.sender);
         r.amount = _amount;
         r.extra = abi.encode(_depositTxid, _outputIndex);
-
-        FeeConfigStore.FeeConfig memory fc = feeStore.getFeeConfig();
-        uint256 fee = fc.mintFee;
         r.fee = fee;
-        r.amount = r.amount - fee;
 
         bytes32 hash = requestManager.addRequest(r);
+        _payFee(fee);
         return hash;
     }
 
-    function addBurnRequest(uint256 _amount) external whenNotPaused nonReentrant returns (bytes32) {
+    /// @notice Submit a burn request.
+    function addBurnRequest(uint256 _amount) external payable whenNotPaused nonReentrant returns (bytes32) {
         require(_amount > 0, "Invalid amount");
         (bool locked, , string memory withdrawalAddr) = userManager.userInfo(msg.sender);
         require(bytes(withdrawalAddr).length > 0, "User not qualified");
         require(!locked, "User locked");
+
+        FeeConfigStore.FeeConfig memory fc = feeStore.getFeeConfig();
+        uint256 fee = fc.burnFee;
+        require(msg.value == fee, "Incorrect fee sent");
 
         RequestManager.Request memory r;
         r.nonce = requestManager.nonce();
@@ -162,29 +151,30 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         r.dstAddress = bytes(withdrawalAddr);
         r.amount = _amount;
         r.extra = "";
-
-        FeeConfigStore.FeeConfig memory fc = feeStore.getFeeConfig();
-        uint256 fee = fc.burnFee;
         r.fee = fee;
-        r.amount = r.amount - fee;
 
         bytes32 hash = requestManager.addRequest(r);
-        _payFee(fee, false);
+        _payFee(fee);
         IiBTCwToken(ibtcw).burn(msg.sender, r.amount);
         return hash;
     }
 
+    /// @notice Submit a cross-chain request.
     function addCrosschainRequest(
         bytes32 _targetChain,
         bytes memory _targetAddress,
         uint256 _amount
-    ) public whenNotPaused nonReentrant returns (bytes32) {
+    ) public payable whenNotPaused nonReentrant returns (bytes32) {
         require(_amount > 0, "Invalid amount");
         require(chainManager.contains(_targetChain), "Target chain not allowed");
 
-        (bool locked, string memory depositAddr,) = userManager.userInfo(msg.sender);
+        (bool locked, string memory depositAddr, ) = userManager.userInfo(msg.sender);
         require(bytes(depositAddr).length > 0, "User not qualified");
         require(!locked, "User locked");
+
+        FeeConfigStore.FeeConfig memory fc = feeStore.getFeeConfig();
+        uint256 fee = fc.crosschainFee;
+        require(msg.value == fee, "Incorrect fee sent");
 
         RequestManager.Request memory r;
         r.nonce = requestManager.nonce();
@@ -196,14 +186,11 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         r.dstAddress = _targetAddress;
         r.amount = _amount;
         r.extra = "";
-
-        FeeConfigStore.FeeConfig memory fc = feeStore.getFeeConfig();
-        uint256 fee = fc.crosschainFee;
         r.fee = fee;
-        r.amount = r.amount - fee;
 
         bytes32 hash = requestManager.addRequest(r);
-        _payFee(fee, false);
+        _payFee(fee);
+        // For cross-chain requests, tokens are burned first and minted on the destination chain upon confirmation.
         IiBTCwToken(ibtcw).burn(msg.sender, r.amount);
         return hash;
     }
@@ -212,7 +199,7 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         uint256 _targetChainId,
         address _targetAddress,
         uint256 _amount
-    ) external returns (bytes32) {
+    ) external payable returns (bytes32) {
         return addCrosschainRequest(
             bytes32(_targetChainId),
             abi.encode(_targetAddress),
@@ -220,6 +207,7 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         );
     }
 
+    /// @notice Called by the minter to confirm a cross-chain request.
     function confirmCrosschainRequest(RequestManager.Request memory r) external onlyMinter whenNotPaused nonReentrant {
         require(r.amount > 0, "Invalid request amount");
         require(r.dstChain == getSelfChainCode(), "Dst chain not match");
@@ -229,22 +217,21 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         require(r.dstAddress.length == 32, "Invalid dstAddress length");
         require(abi.decode(r.dstAddress, (uint256)) <= type(uint160).max, "Invalid dstAddress: not address");
 
+        // Get source request hash from r.extra
         bytes32 srcHash = abi.decode(r.extra, (bytes32));
-        require(getCrossSourceRequestHash(r) == srcHash, "Source request hash is incorrect");
+        require(r.getCrossSourceRequestHash() == srcHash, "Source request hash is incorrect");
         require(crosschainRequestConfirmation[srcHash] == bytes32(0), "Source request already confirmed");
 
-        r.nonce = requestManager.nonce();
+        // Add the cross-chain confirmation request in RequestManager
         bytes32 dstHash = requestManager.addRequest(r);
         crosschainRequestConfirmation[srcHash] = dstHash;
 
         IiBTCwToken(ibtcw).mint(abi.decode(r.dstAddress, (address)), r.amount);
     }
 
-    function confirmMintRequest(uint256 index) external onlyMinter whenNotPaused nonReentrant {
-        require(index < requestManager.nonce(), "Invalid request index");
-
-        RequestManager.Request memory r = requestManager.getRequest(index);
-
+    /// @notice Called by the minter to confirm a mint request.
+    function confirmMintRequest(bytes32 _hash) external onlyMinter whenNotPaused nonReentrant {
+        RequestManager.Request memory r = requestManager.getRequestByHash(_hash);
         require(r.amount > 0, "Invalid request amount");
         require(r.op == RequestManager.Operation.Mint, "Not a Mint request");
         require(r.dstChain == getSelfChainCode(), "Dst chain mismatch");
@@ -252,20 +239,41 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         require(r.dstAddress.length == 32, "Invalid dstAddress length");
         require(abi.decode(r.dstAddress, (uint256)) <= type(uint160).max, "Invalid dstAddress: not address");
 
-        requestManager.confirmRequest(index);
-
+        requestManager.confirmRequest(_hash);
         address user = abi.decode(r.dstAddress, (address));
         IiBTCwToken(ibtcw).mint(user, r.amount);
+        emit RequestConfirmed(_hash);
     }
 
+    /// @notice Called by the minter to confirm a burn request, providing BTC withdrawal info.
+    function confirmBurnRequest(
+        bytes32 _hash,
+        bytes32 _withdrawalTxid,
+        uint256 _outputIndex
+    ) external onlyMinter whenNotPaused nonReentrant {
+        require(uint256(_withdrawalTxid) != 0, "Empty withdraw txid");
 
-    function _payFee(uint256 _fee, bool viaMint) internal {
+        RequestManager.Request memory r = requestManager.getRequestByHash(_hash);
+        require(r.op == RequestManager.Operation.Burn, "Not Burn request");
+        require(r.amount > 0, "Invalid request amount");
+        require(r.status == RequestManager.Status.Pending, "Request not pending");
+
+        bytes memory _withdrawalTxData = abi.encode(_withdrawalTxid, _outputIndex);
+        bytes32 _withdrawalDataHash = keccak256(_withdrawalTxData);
+        require(usedWithdrawalTxs[_withdrawalDataHash] == bytes32(0), "Used BTC withdrawal tx");
+        usedWithdrawalTxs[_withdrawalDataHash] = _hash;
+
+        // Call confirmRequestWithExtra to update the extra field with the BTC withdrawal data and confirm the request.
+        requestManager.confirmRequestWithExtra(_hash, _withdrawalTxData);
+        emit RequestConfirmed(_hash);
+    }
+
+    function _payFee(uint256 _fee) internal {
         if (_fee == 0) return;
         address feeRecipient = feeStore.feeRecipient();
-        if (viaMint) {
-            IiBTCwToken(ibtcw).mint(feeRecipient, _fee);
-        } else {
-            IiBTCwToken(ibtcw).payFee(msg.sender, feeRecipient, _fee);
-        }
+        (bool success, ) = feeRecipient.call{value: _fee}("");
+        require(success, "Fee transfer failed");
     }
+
+    receive() external payable {}
 }

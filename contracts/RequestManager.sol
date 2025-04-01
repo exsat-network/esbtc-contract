@@ -6,10 +6,11 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-
 contract RequestManager is AccessControlUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
-    enum Operation {Nop, Mint, Burn, CrosschainRequest, CrosschainConfirm}
-    enum Status {Unused, Pending, Confirmed, Rejected}
+    using RequestLib for Request;
+
+    enum Operation { Nop, Mint, Burn, CrosschainRequest, CrosschainConfirm }
+    enum Status { Unused, Pending, Confirmed, Rejected }
 
     struct Request {
         Operation op;
@@ -24,7 +25,9 @@ contract RequestManager is AccessControlUpgradeable, PausableUpgradeable, Reentr
         bytes extra;
     }
 
-    Request[] public requests;
+    bytes32[] public requestHashes;
+    mapping(bytes32 => Request) public requests;
+
     address public bridge;
 
     event RequestAdded(bytes32 indexed hash, Operation op, Request requestData);
@@ -48,55 +51,79 @@ contract RequestManager is AccessControlUpgradeable, PausableUpgradeable, Reentr
     }
 
     function nonce() public view returns (uint128) {
-        require(requests.length < type(uint128).max, "Nonce overflow");
-        return uint128(requests.length);
+        require(requestHashes.length < type(uint128).max, "Nonce overflow");
+        return uint128(requestHashes.length);
     }
 
     function getRequest(uint256 index) external view returns (Request memory) {
-        require(index < requests.length, "Invalid index");
-        return requests[index];
+        require(index < requestHashes.length, "Invalid index");
+        bytes32 hash = requestHashes[index];
+        return requests[hash];
+    }
+
+    function getRequestByHash(bytes32 _hash) external view returns (Request memory) {
+        return requests[_hash];
     }
 
     function addRequest(Request memory r) external returns (bytes32) {
         require(msg.sender == bridge, "Only bridge can call addRequest");
         require(r.nonce == nonce(), "Nonce mismatch");
-        bytes32 hash = keccak256(
-            abi.encode(
-                r.op,
-                r.nonce,
-                r.srcChain,
-                r.srcAddress,
-                r.dstChain,
-                r.dstAddress,
-                r.amount,
-                r.fee,
-                r.extra
-            )
-        );
-        requests.push(r);
+        bytes32 hash = r.getRequestHash();
+        requests[hash] = r;
+        requestHashes.push(hash);
         emit RequestAdded(hash, r.op, r);
         return hash;
     }
 
-    function confirmRequest(uint256 index) external {
+    /// @notice Confirm the request and update its extra field with new data.
+    /// @param _hash The unique identifier of the request.
+    /// @param newExtra The new extra data to store.
+    function confirmRequestWithExtra(bytes32 _hash, bytes memory newExtra) external {
         require(msg.sender == bridge, "Only bridge can call confirmRequest");
-        require(index < requests.length, "Invalid index");
-        Request storage r = requests[index];
+        Request storage r = requests[_hash];
+        require(r.status == Status.Pending, "Request not pending");
+        r.extra = newExtra;
+        r.status = Status.Confirmed;
+        emit RequestConfirmed(_hash);
+    }
+
+    /// @notice Confirm the request without updating extra data.
+    function confirmRequest(bytes32 _hash) external {
+        require(msg.sender == bridge, "Only bridge can call confirmRequest");
+        Request storage r = requests[_hash];
         require(r.status == Status.Pending, "Request not pending");
         r.status = Status.Confirmed;
-        bytes32 hash = keccak256(
+        emit RequestConfirmed(_hash);
+    }
+}
+
+library RequestLib {
+    function getRequestHash(
+        RequestManager.Request memory self
+    ) internal pure returns (bytes32) {
+        return keccak256(
             abi.encode(
-                r.op,
-                r.nonce,
-                r.srcChain,
-                r.srcAddress,
-                r.dstChain,
-                r.dstAddress,
-                r.amount,
-                r.fee,
-                r.extra
+                self.op,
+                self.nonce,
+                self.srcChain,
+                self.srcAddress,
+                self.dstChain,
+                self.dstAddress,
+                self.amount,
+                self.fee,
+                self.extra
             )
         );
-        emit RequestConfirmed(hash);
+    }
+
+    function getCrossSourceRequestHash(
+        RequestManager.Request memory self
+    ) internal pure returns (bytes32 _hash) {
+        bytes memory extra = self.extra;
+        self.op = RequestManager.Operation.CrosschainRequest;
+        self.extra = "";
+        _hash = getRequestHash(self);
+        self.op = RequestManager.Operation.CrosschainConfirm;
+        self.extra = extra;
     }
 }

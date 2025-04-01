@@ -37,14 +37,6 @@ contract iBTCwToken is ERC20Upgradeable, AccessControlUpgradeable, PausableUpgra
         _burn(from, amount);
     }
 
-    function payFee(
-        address payer,
-        address feeRecipient,
-        uint256 amount
-    ) external onlyRole(MINTER_ROLE) {
-        _transfer(payer, feeRecipient, amount);
-    }
-
     // Blacklist management
     function addToBlacklist(address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
         _blacklist[account] = true;
