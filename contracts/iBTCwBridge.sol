@@ -35,21 +35,34 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
     // Prevent reusing the same BTC withdrawal tx (using a unique key from withdrawal txid and output index)
     mapping(bytes32 => bytes32) public usedWithdrawalTxs;
 
-    event TokenSet(address indexed _token);
     event MinterSet(address indexed _minter);
-    event FeeStoreSet(address feeStore);
-    event UserManagerSet(address userManager);
-    event RequestManagerSet(address requestManager);
-    event ChainManagerSet(address chainManager);
-    event RequestConfirmed(bytes32 indexed requestHash);
 
-    function initialize(bytes32 _mainChain) public initializer {
+    function initialize(
+        bytes32 _mainChain,
+        address _token,
+        address _minter,
+        address _feeStore,
+        address _userManager,
+        address _requestManager,
+        address _chainManager
+    ) public initializer {
         __AccessControl_init();
         __Pausable_init();
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
+
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         MAIN_CHAIN = _mainChain;
+
+        // Set token and managers
+        ibtcw = _token;
+        minter = _minter;
+        feeStore = FeeConfigStore(_feeStore);
+        userManager = UserManager(_userManager);
+        requestManager = RequestManager(_requestManager);
+        chainManager = ChainManager(_chainManager);
+
+        emit MinterSet(_minter);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
@@ -59,34 +72,9 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         _;
     }
 
-    function setToken(address _token) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        ibtcw = _token;
-        emit TokenSet(_token);
-    }
-
     function setMinter(address _minter) external onlyRole(DEFAULT_ADMIN_ROLE) {
         minter = _minter;
         emit MinterSet(_minter);
-    }
-
-    function setFeeStore(address _feeStore) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        feeStore = FeeConfigStore(_feeStore);
-        emit FeeStoreSet(_feeStore);
-    }
-
-    function setUserManager(address _userManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        userManager = UserManager(_userManager);
-        emit UserManagerSet(_userManager);
-    }
-
-    function setRequestManager(address _requestManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        requestManager = RequestManager(_requestManager);
-        emit RequestManagerSet(_requestManager);
-    }
-
-    function setChainManager(address _chainManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        chainManager = ChainManager(_chainManager);
-        emit ChainManagerSet(_chainManager);
     }
 
     function getSelfChainCode() public view returns (bytes32) {
@@ -222,6 +210,8 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         require(r.getCrossSourceRequestHash() == srcHash, "Source request hash is incorrect");
         require(crosschainRequestConfirmation[srcHash] == bytes32(0), "Source request already confirmed");
 
+        // Override src nonce to dst nonce.
+        r.nonce = requestManager.nonce();
         // Add the cross-chain confirmation request in RequestManager
         bytes32 dstHash = requestManager.addRequest(r);
         crosschainRequestConfirmation[srcHash] = dstHash;
@@ -242,7 +232,6 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         requestManager.confirmRequest(_hash);
         address user = abi.decode(r.dstAddress, (address));
         IiBTCwToken(ibtcw).mint(user, r.amount);
-        emit RequestConfirmed(_hash);
     }
 
     /// @notice Called by the minter to confirm a burn request, providing BTC withdrawal info.
@@ -265,7 +254,6 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
 
         // Call confirmRequestWithExtra to update the extra field with the BTC withdrawal data and confirm the request.
         requestManager.confirmRequestWithExtra(_hash, _withdrawalTxData);
-        emit RequestConfirmed(_hash);
     }
 
     function _payFee(uint256 _fee) internal {
