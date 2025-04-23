@@ -41,6 +41,9 @@ contract UserManager is AccessControlUpgradeable, UUPSUpgradeable {
         string calldata depositAddress,
         string calldata withdrawalAddress
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(user != address(0), "User is zero address");
+        require(bytes(depositAddress).length > 0, "DepositAddress empty");
+        require(bytes(withdrawalAddress).length > 0, "WithdrawalAddress empty");
         require(qualifiedUsers.add(user), "User already qualified");
         require(depositAddressToUser[depositAddress] == address(0), "Deposit address used");
         userInfo[user] = UserInfo(false, depositAddress, withdrawalAddress);
@@ -53,6 +56,9 @@ contract UserManager is AccessControlUpgradeable, UUPSUpgradeable {
         string calldata depositAddress,
         string calldata withdrawalAddress
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(user != address(0), "User is zero address");
+        require(bytes(depositAddress).length > 0, "DepositAddress empty");
+        require(bytes(withdrawalAddress).length > 0, "WithdrawalAddress empty");
         require(qualifiedUsers.contains(user), "User not qualified");
         require(!userInfo[user].locked, "User locked");
         string memory oldDeposit = userInfo[user].depositAddress;
@@ -67,6 +73,7 @@ contract UserManager is AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     function removeQualifiedUser(address user) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(user != address(0), "User is zero address");
         require(qualifiedUsers.remove(user), "User not qualified");
         string memory depAddr = userInfo[user].depositAddress;
         delete depositAddressToUser[depAddr];
@@ -75,6 +82,7 @@ contract UserManager is AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     function lockQualifiedUser(address user) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(user != address(0), "User is zero address");
         require(qualifiedUsers.contains(user), "User not qualified");
         require(!userInfo[user].locked, "User already locked");
         userInfo[user].locked = true;
@@ -82,6 +90,7 @@ contract UserManager is AccessControlUpgradeable, UUPSUpgradeable {
     }
 
     function unlockQualifiedUser(address user) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(user != address(0), "User is zero address");
         require(qualifiedUsers.contains(user), "User not qualified");
         require(userInfo[user].locked, "User not locked");
         userInfo[user].locked = false;
