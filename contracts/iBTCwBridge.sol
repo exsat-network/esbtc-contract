@@ -171,6 +171,9 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         require(chainManager.contains(_targetChain), "Target chain not allowed");
         require(bytes(_targetAddress).length > 0, "Invalid targetAddress");
 
+        (bool locked, ,) = userManager.userInfo(msg.sender);
+        require(!locked, "User locked");
+
         FeeConfigStore.FeeConfig memory fc = feeStore.getFeeConfig();
         uint256 fee = fc.crosschainFee;
         require(msg.value == fee, "Incorrect fee sent");
