@@ -219,7 +219,11 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         bytes32 dstHash = requestManager.addRequest(r);
         crosschainRequestConfirmation[srcHash] = dstHash;
 
-        IiBTCwToken(ibtcw).mint(abi.decode(r.dstAddress, (address)), r.amount);
+        address dst = abi.decode(r.dstAddress, (address));
+        (bool locked, , ) = userManager.userInfo(dst);
+        require(!locked, "UserManager: user locked");
+
+        IiBTCwToken(ibtcw).mint(dst, r.amount);
     }
 
     /// @notice Called by the minter to confirm a mint request.
@@ -233,7 +237,11 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         require(abi.decode(r.dstAddress, (uint256)) <= type(uint160).max, "Invalid dstAddress: not address");
 
         requestManager.confirmRequest(_hash);
+
         address user = abi.decode(r.dstAddress, (address));
+        (bool locked, , ) = userManager.userInfo(user);
+        require(!locked, "UserManager: user locked");
+
         IiBTCwToken(ibtcw).mint(user, r.amount);
     }
 
