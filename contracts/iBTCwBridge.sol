@@ -57,6 +57,14 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         MAIN_CHAIN = _mainChain;
 
+        // Validate non-zero addresses
+        require(_token          != address(0), "Bridge: token is zero address");
+        require(_minter         != address(0), "Bridge: minter is zero address");
+        require(_feeStore       != address(0), "Bridge: feeStore is zero address");
+        require(_userManager    != address(0), "Bridge: userManager is zero address");
+        require(_requestManager != address(0), "Bridge: requestManager is zero address");
+        require(_chainManager   != address(0), "Bridge: chainManager is zero address");
+
         // Set token and managers
         ibtcw = _token;
         minter = _minter;
@@ -76,6 +84,7 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
     }
 
     function setMinter(address _minter) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_minter != address(0), "Bridge: minter is zero address");
         minter = _minter;
         emit MinterSet(_minter);
     }
