@@ -34,6 +34,9 @@ contract RequestManager is AccessControlUpgradeable, PausableUpgradeable, Reentr
     event RequestConfirmed(bytes32 indexed hash);
     event BridgeSet(address indexed bridgeAddress);
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() initializer {}
+
     function initialize() public initializer {
         __AccessControl_init();
         __Pausable_init();

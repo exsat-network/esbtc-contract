@@ -37,6 +37,9 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
 
     event MinterSet(address indexed _minter);
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() initializer {}
+
     function initialize(
         bytes32 _mainChain,
         address _token,

@@ -15,6 +15,9 @@ contract ChainManager is AccessControlUpgradeable, UUPSUpgradeable {
     event DstChainAdded(bytes32 indexed dstChain);
     event DstChainRemoved(bytes32 indexed dstChain);
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() initializer {}
+
     function initialize(bytes32 _mainChain) public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();

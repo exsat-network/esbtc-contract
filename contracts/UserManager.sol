@@ -25,6 +25,9 @@ contract UserManager is AccessControlUpgradeable, UUPSUpgradeable {
     event QualifiedUserLocked(address indexed user);
     event QualifiedUserUnlocked(address indexed user);
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() initializer {}
+
     function initialize() public initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();

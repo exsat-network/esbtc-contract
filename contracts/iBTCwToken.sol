@@ -14,6 +14,9 @@ contract iBTCwToken is ERC20Upgradeable, AccessControlUpgradeable, PausableUpgra
     // Blacklist mapping
     mapping(address => bool) private _blacklist;
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() initializer {}
+
     function initialize(
         string memory name_,
         string memory symbol_

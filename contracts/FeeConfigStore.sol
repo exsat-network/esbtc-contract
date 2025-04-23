@@ -17,6 +17,9 @@ contract FeeConfigStore is AccessControlUpgradeable, UUPSUpgradeable {
     event FeeConfigSet(uint256 mintFee, uint256 burnFee, uint256 crosschainFee);
     event FeeRecipientSet(address feeRecipient);
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() initializer {}
+
     function initialize(
         uint256 mintFee,
         uint256 burnFee,
