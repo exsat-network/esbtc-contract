@@ -6,7 +6,7 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-contract RequestManager is AccessControlUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
+contract RequestManager is AccessControlUpgradeable, UUPSUpgradeable {
     using RequestLib for Request;
 
     enum Operation { Nop, Mint, Burn, CrosschainRequest, CrosschainConfirm }
@@ -39,8 +39,6 @@ contract RequestManager is AccessControlUpgradeable, PausableUpgradeable, Reentr
 
     function initialize() public initializer {
         __AccessControl_init();
-        __Pausable_init();
-        __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }

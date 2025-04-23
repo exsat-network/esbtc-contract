@@ -19,6 +19,8 @@ interface IiBTCwToken {
 contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
     using RequestLib for RequestManager.Request;
 
+    bytes32 public constant PAUSE_ROLE = keccak256("PAUSE_ROLE");
+
     bytes32 public MAIN_CHAIN;
     address public minter;
     address public ibtcw;
@@ -274,6 +276,16 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
 
         // Call confirmRequestWithExtra to update the extra field with the BTC withdrawal data and confirm the request.
         requestManager.confirmRequestWithExtra(_hash, _withdrawalTxData);
+    }
+
+    /// @notice Pause all bridge operations
+    function pause() external onlyRole(PAUSE_ROLE) {
+        _pause();
+    }
+
+    /// @notice Unpause bridge operations
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
     }
 
     function _payFee(uint256 _fee) internal {
