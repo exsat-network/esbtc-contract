@@ -30,7 +30,9 @@ contract ChainManager is AccessControlUpgradeable, UUPSUpgradeable {
     function addDstChains(bytes32[] memory _dstChains) external onlyRole(DEFAULT_ADMIN_ROLE) {
         for (uint i = 0; i < _dstChains.length; i++) {
             bytes32 chainCode = _dstChains[i];
+            bytes32 currentChain = bytes32(uint256(block.chainid));
             require(chainCode != MAIN_CHAIN, "Invalid dst chain");
+            require(chainCode != currentChain, "ChainManager: cannot add current chain");
             if (dstChains.add(chainCode)) {
                 emit DstChainAdded(chainCode);
             }
