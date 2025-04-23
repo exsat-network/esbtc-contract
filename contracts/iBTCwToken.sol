@@ -11,6 +11,10 @@ contract iBTCwToken is ERC20Upgradeable, AccessControlUpgradeable, PausableUpgra
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
+    // Events for blacklist management
+    event Blacklisted(address indexed account);
+    event UnBlacklisted(address indexed account);
+
     // Blacklist mapping
     mapping(address => bool) private _blacklist;
 
@@ -43,10 +47,12 @@ contract iBTCwToken is ERC20Upgradeable, AccessControlUpgradeable, PausableUpgra
     // Blacklist management
     function addToBlacklist(address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
         _blacklist[account] = true;
+        emit Blacklisted(account);
     }
 
     function removeFromBlacklist(address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
         _blacklist[account] = false;
+        emit UnBlacklisted(account);
     }
 
     function isBlacklisted(address account) public view returns (bool) {
