@@ -10,7 +10,7 @@ contract RequestManager is AccessControlUpgradeable, PausableUpgradeable, Reentr
     using RequestLib for Request;
 
     enum Operation { Nop, Mint, Burn, CrosschainRequest, CrosschainConfirm }
-    enum Status { Unused, Pending, Confirmed, Rejected }
+    enum Status { Unused, Pending, Confirmed }
 
     struct Request {
         Operation op;
