@@ -10,7 +10,7 @@ contract RequestManager is AccessControlUpgradeable, UUPSUpgradeable {
     using RequestLib for Request;
 
     enum Operation { Nop, Mint, Burn, CrosschainRequest, CrosschainConfirm }
-    enum Status { Unused, Pending, Confirmed }
+    enum Status { Unused, Pending, Confirmed, Canceled }
 
     struct Request {
         Operation op;
@@ -33,6 +33,7 @@ contract RequestManager is AccessControlUpgradeable, UUPSUpgradeable {
     event RequestAdded(bytes32 indexed hash, Operation op, Request requestData);
     event RequestConfirmed(bytes32 indexed hash);
     event BridgeSet(address indexed bridgeAddress);
+    event RequestCanceled(bytes32 indexed hash);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() initializer {}
@@ -95,6 +96,15 @@ contract RequestManager is AccessControlUpgradeable, UUPSUpgradeable {
         require(r.status == Status.Pending, "Request not pending");
         r.status = Status.Confirmed;
         emit RequestConfirmed(_hash);
+    }
+
+    /// @notice Cancel the request
+    function cancelRequest(bytes32 _hash) external {
+        require(msg.sender == bridge, "Only bridge can call cancelRequest");
+        Request storage r = requests[_hash];
+        require(r.status == Status.Pending, "Request not pending");
+        r.status = Status.Canceled;
+        emit RequestCanceled(_hash);
     }
 }
 

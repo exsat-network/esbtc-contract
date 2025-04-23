@@ -278,6 +278,26 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         requestManager.confirmRequestWithExtra(_hash, _withdrawalTxData);
     }
 
+    /// @notice Revokes a pending Burn or Crosschain request and re-mints the tokens to the original user.
+    /// @dev 𝗜𝗠𝗣𝗢𝗥𝗧𝗔𝗡𝗧: this method must only be invoked after strict off-chain verification that the request
+    ///      has not already been confirmed (e.g. cross-chain mint on the destination). Failing to do so
+    ///      could lead to double-minting or inconsistency if the request was already processed.
+    function revokeRequest(bytes32 _hash) external onlyMinter whenNotPaused nonReentrant {
+        RequestManager.Request memory r = requestManager.getRequestByHash(_hash);
+        require(r.status == RequestManager.Status.Pending, "Not pending");
+
+        require(
+            r.op == RequestManager.Operation.Burn ||
+            r.op == RequestManager.Operation.CrosschainRequest,
+            "Not revocable"
+        );
+
+        requestManager.cancelRequest(_hash);
+
+        address user = abi.decode(r.srcAddress, (address));
+        IiBTCwToken(ibtcw).mint(user, r.amount);
+    }
+
     /// @notice Pause all bridge operations
     function pause() external onlyRole(PAUSE_ROLE) {
         _pause();
