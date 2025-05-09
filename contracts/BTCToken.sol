@@ -6,7 +6,7 @@ import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/acce
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-contract iBTCwToken is ERC20Upgradeable, AccessControlUpgradeable, PausableUpgradeable, UUPSUpgradeable {
+contract BTCToken is ERC20Upgradeable, AccessControlUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     // Roles
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
@@ -70,7 +70,7 @@ contract iBTCwToken is ERC20Upgradeable, AccessControlUpgradeable, PausableUpgra
 
     // Internal function to check paused state and blacklist status
     function _checkPausedAndBlacklist(address account) internal view whenNotPaused {
-        require(!_blacklist[account], "iBTCwToken: account is blacklisted");
+        require(!_blacklist[account], "BTCToken: account is blacklisted");
     }
 
     // Override ERC20 _transfer to include pause and blacklist checks
@@ -79,4 +79,5 @@ contract iBTCwToken is ERC20Upgradeable, AccessControlUpgradeable, PausableUpgra
         _checkPausedAndBlacklist(recipient);
         super._transfer(sender, recipient, amount);
     }
+
 }

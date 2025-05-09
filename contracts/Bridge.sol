@@ -11,19 +11,19 @@ import "./UserManager.sol";
 import "./RequestManager.sol";
 import "./ChainManager.sol";
 
-interface IiBTCwToken {
+interface IToken {
     function mint(address to, uint256 amount) external;
     function burn(address from, uint256 amount) external;
 }
 
-contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
+contract Bridge is AccessControlUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
     using RequestLib for RequestManager.Request;
 
     bytes32 public constant PAUSE_ROLE = keccak256("PAUSE_ROLE");
 
     bytes32 public MAIN_CHAIN;
     address public minter;
-    address public ibtcw;
+    address public token;
 
     FeeConfigStore public feeStore;
     UserManager public userManager;
@@ -68,7 +68,7 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         require(_chainManager   != address(0), "Bridge: chainManager is zero address");
 
         // Set token and managers
-        ibtcw = _token;
+        token = _token;
         minter = _minter;
         feeStore = FeeConfigStore(_feeStore);
         userManager = UserManager(_userManager);
@@ -157,7 +157,7 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
 
         bytes32 hash = requestManager.addRequest(r);
         _payFee(fee);
-        IiBTCwToken(ibtcw).burn(msg.sender, r.amount);
+        IToken(token).burn(msg.sender, r.amount);
         return hash;
     }
 
@@ -193,7 +193,7 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         bytes32 hash = requestManager.addRequest(r);
         _payFee(fee);
         // For cross-chain requests, tokens are burned first and minted on the destination chain upon confirmation.
-        IiBTCwToken(ibtcw).burn(msg.sender, r.amount);
+        IToken(token).burn(msg.sender, r.amount);
         return hash;
     }
 
@@ -234,7 +234,7 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         (bool locked, , ) = userManager.userInfo(dst);
         require(!locked, "UserManager: user locked");
 
-        IiBTCwToken(ibtcw).mint(dst, r.amount);
+        IToken(token).mint(dst, r.amount);
     }
 
     /// @notice Called by the minter to confirm a mint request.
@@ -253,7 +253,7 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         (bool locked, , ) = userManager.userInfo(user);
         require(!locked, "UserManager: user locked");
 
-        IiBTCwToken(ibtcw).mint(user, r.amount);
+        IToken(token).mint(user, r.amount);
     }
 
     /// @notice Called by the minter to confirm a burn request, providing BTC withdrawal info.
@@ -295,7 +295,7 @@ contract iBTCwBridge is AccessControlUpgradeable, PausableUpgradeable, Reentranc
         requestManager.cancelRequest(_hash);
 
         address user = abi.decode(r.srcAddress, (address));
-        IiBTCwToken(ibtcw).mint(user, r.amount);
+        IToken(token).mint(user, r.amount);
     }
 
     /// @notice Pause all bridge operations
